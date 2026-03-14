@@ -17,6 +17,7 @@ from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 from src.agent.tools import search_clinical_docs, search_patients
+
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 load_dotenv()
@@ -74,11 +75,11 @@ def get_llm():
         raise ValueError(f"Unsupported LLM_PROVIDER: {LLM_PROVIDER}")
 
 
-def build_agent(llm, tools: list): 
+def build_agent(llm, tools: list):
     """
     Construye el agente dadas sus dependencias (inyeccion de dependencias).
-    
-    Args : 
+
+    Args :
         llm: El modelo de lenguaje a utilizar
         tools : Lista de herramientas para el agente
 
@@ -86,16 +87,6 @@ def build_agent(llm, tools: list):
         Instancia del agente lista para invocar.
     """
     from src.agent.schemas import ClinicalResponse
-    agent = create_agent(
-        model=llm
-        tools = tools,
-        checkpointer=InMemorySaver()
-        system_prompt=SYSTEM_PROMPT
-        response_format= ClinicalResponse
-        
-    )
-
-    llm = get_llm()
 
     agent = create_agent(
         model=llm,
@@ -115,6 +106,6 @@ clinical_agent = build_agent()
 from src.agent.tools import search_clinical_docs, search_patients
 
 llm = get_llm
-clinical_tools = [search_clinical_docs,search_patients]
+clinical_tools = [search_clinical_docs, search_patients]
 
 clinical_agent = build_agent(llm=llm, tools=clinical_tools)
