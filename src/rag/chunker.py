@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 DOCS_DIR = Path("docs/sample_docs")
-CHUNK_SIZE = 10000
+CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 100
 
 

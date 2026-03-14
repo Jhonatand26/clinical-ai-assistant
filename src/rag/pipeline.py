@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
-OPENAI_MODEL = os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini")
+OPENAI_MODEL = os.getenv("OPENAI_CHAT_MODEL", "gpt-5-nano")
 
 
 @dataclass
@@ -67,6 +67,7 @@ def get_llm():
 def build_prompt(
     query: str,
     context_chunks: list[Document],
+    chat_history: list[dict] | None = None,
 ) -> str:
     """
     Construye el prompt para el LLM combinando el
@@ -75,6 +76,7 @@ def build_prompt(
     Args:
         query: Pregunta del usuario.
         context_chunks: Chunks recuperados por el retriever.
+        chat_history: Historial de conversacion previo.
 
     Returns:
         Prompt completo listo para enviar al LLM.
@@ -88,12 +90,21 @@ def build_prompt(
         ]
     )
 
-    return f"""Eres un asistente médico especializado. 
-Responde ÚNICAMENTE con base en el contexto proporcionado.
+    history_text = ""
+    if chat_history:
+        history_text = "\n\nHistorial de conversación:\n"
+        for msg in chat_history[-4:]:
+            role = "Usuario" if msg["role"] == "user" else "Asistente"
+            history_text += f"{role}: {msg['content']}\n"
+
+    return f"""Eres un asistente médico especializado.
+Responde de forma directa y clara, sin frases introductorias
+como "según el contexto" o "la respuesta es".
+Usa ÚNICAMENTE la información del contexto proporcionado.
 Si la información no está en el contexto, di explícitamente
 que no tienes suficiente información para responder.
-
-Contexto:
+{history_text}
+Contexto documental:
 {context}
 
 Pregunta: {query}
@@ -101,7 +112,10 @@ Pregunta: {query}
 Respuesta:"""
 
 
-def ask(query: str) -> RAGResponse:
+def ask(
+    query: str,
+    chat_history: list[dict] | None = None,
+) -> RAGResponse:
     """
     Ejecuta el pipeline RAG completo para una consulta.
 
