@@ -48,7 +48,6 @@ def answer_clinical_question(query: str) -> str:
         logger.error(f"Error executing RAG pipeline: {e}")
         return "Hubo un error al procesar la solicitud. Por favor, revisa los logs."
 
-
     if not rag_response or not rag_response.answer:
         return "No se encontró información relevante para responder a la pregunta."
 
@@ -57,22 +56,26 @@ def answer_clinical_question(query: str) -> str:
     for doc in rag_response.sources:
         source = doc.metadata.get("source", "N/A")
         # Para los PDFs, mostrar la página. Para otros, el nombre.
-        if 'page' in doc.metadata:
-            source_ref = f"{Path(source).name} (Página {doc.metadata.get('page', 'N/A')})"
-        elif 'name' in doc.metadata:
+        if "page" in doc.metadata:
+            source_ref = (
+                f"{Path(source).name} (Página {doc.metadata.get('page', 'N/A')})"
+            )
+        elif "name" in doc.metadata:
             source_ref = f"{source} (Paciente: {doc.metadata.get('name', 'N/A')})"
-        elif 'medicine' in doc.metadata:
-            source_ref = f"{source} (Medicamento: {doc.metadata.get('medicine', 'N/A')})"
+        elif "medicine" in doc.metadata:
+            source_ref = (
+                f"{source} (Medicamento: {doc.metadata.get('medicine', 'N/A')})"
+            )
         else:
             source_ref = source
-        
+
         # Evitar duplicados en las fuentes mostradas
         if source_ref not in formatted_sources:
             formatted_sources.append(source_ref)
-    
+
     formatted_answer = (
         f"Respuesta: {rag_response.answer}\n\n"
         f"Fuentes Consultadas: {'; '.join(formatted_sources)}"
     )
-    
+
     return formatted_answer
