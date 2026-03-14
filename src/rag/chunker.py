@@ -16,8 +16,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 DOCS_DIR = Path("docs/sample_docs")
-CHUNK_SIZE = 500
-CHUNK_OVERLAP = 50
+CHUNK_SIZE = 10000
+CHUNK_OVERLAP = 100
 
 
 def load_pdf(pdf_path: Path) -> list[Document]:
