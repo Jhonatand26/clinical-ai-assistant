@@ -1,9 +1,8 @@
 """
 tools.py
 
-Define las tools disponibles para el agente clínico.
-Cada tool encapsula una capacidad específica — el agente
-decide cuándo invocar cada una.
+Define la tool unificada disponible para el agente clínico.
+Esta herramienta es un wrapper sobre el pipeline RAG completo.
 """
 
 import logging
@@ -14,97 +13,66 @@ from langchain.tools import tool
 
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 
+# Importar el pipeline RAG principal
+from src.rag.pipeline import ask as ask_rag_pipeline
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 @tool
-def search_clinical_docs(query: str) -> str:
+def answer_clinical_question(query: str) -> str:
     """
-    Busca información relevante en la documentación
-    clínica indexada usando búsqueda híbrida semántica
-    y por palabras clave (BM25 + ChromaDB).
+    Responde a cualquier pregunta sobre el ámbito clínico utilizando
+    el sistema RAG unificado. Este sistema tiene acceso a guías
+    clínicas, protocolos, registros de pacientes del sistema legado
+    y listados de medicamentos.
 
-    Úsala cuando el usuario pregunte sobre enfermedades,
-    tratamientos, medicamentos o protocolos clínicos.
+    Úsala para CUALQUIER pregunta del usuario, ya sea sobre
+    tratamientos, enfermedades, o para buscar información de un
+    paciente específico.
 
     Args:
-        query: Pregunta o término clínico a buscar.
+        query: La pregunta completa del usuario en lenguaje natural.
 
     Returns:
-        Fragmentos relevantes con sus fuentes documentales.
+        Una respuesta completa que incluye la contestación directa
+        y las fuentes de información utilizadas.
     """
-    from src.rag.chunker import load_all_pdfs
-    from src.rag.embedder import load_vectorstore
-    from src.rag.retriever import hybrid_search
+    logger.info(f"Executing RAG pipeline for query: '{query}'")
 
-    vectorstore = load_vectorstore()
-    all_chunks = load_all_pdfs()
-    chunks = hybrid_search(vectorstore, all_chunks, query)
-
-    if not chunks:
-        return "No se encontró información relevante."
-
-    results = []
-    for doc in chunks:
-        source = Path(doc.metadata.get("source", "N/A")).name
-        page = doc.metadata.get("page", "N/A")
-        results.append(f"[{source} — Página {page}]\n" f"{doc.page_content}")
-
-    return "\n\n---\n\n".join(results)
+    # Invocar el pipeline RAG centralizado
+    try:
+        rag_response = ask_rag_pipeline(query)
+    except Exception as e:
+        logger.error(f"Error executing RAG pipeline: {e}")
+        return "Hubo un error al procesar la solicitud. Por favor, revisa los logs."
 
 
-@tool
-def search_patients(query: str) -> str:
-    """
-    Consulta la base de datos de pacientes del sistema
-    legado clínico. Úsala cuando el usuario pregunte
-    sobre pacientes específicos, diagnósticos registrados
-    o medicamentos activos en el sistema.
+    if not rag_response or not rag_response.answer:
+        return "No se encontró información relevante para responder a la pregunta."
 
-    Args:
-        query: Término de búsqueda — nombre, diagnóstico
-               o medicamento.
-
-    Returns:
-        Registros de pacientes que coinciden con la búsqueda.
-    """
-    import sqlite3
-    from pathlib import Path
-
-    db_path = Path("data/raw/legacy_clinic.db")
-
-    if not db_path.exists():
-        return "Base de datos de pacientes no disponible."
-
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-
-    cursor.execute(
-        """
-        SELECT name, age, diagnosis, medication, last_visit
-        FROM patients
-        WHERE name LIKE ?
-           OR diagnosis LIKE ?
-           OR medication LIKE ?
-    """,
-        (f"%{query}%", f"%{query}%", f"%{query}%"),
+    # Formatear la respuesta para el agente
+    formatted_sources = []
+    for doc in rag_response.sources:
+        source = doc.metadata.get("source", "N/A")
+        # Para los PDFs, mostrar la página. Para otros, el nombre.
+        if 'page' in doc.metadata:
+            source_ref = f"{Path(source).name} (Página {doc.metadata.get('page', 'N/A')})"
+        elif 'name' in doc.metadata:
+            source_ref = f"{source} (Paciente: {doc.metadata.get('name', 'N/A')})"
+        elif 'medicine' in doc.metadata:
+            source_ref = f"{source} (Medicamento: {doc.metadata.get('medicine', 'N/A')})"
+        else:
+            source_ref = source
+        
+        # Evitar duplicados en las fuentes mostradas
+        if source_ref not in formatted_sources:
+            formatted_sources.append(source_ref)
+    
+    formatted_answer = (
+        f"Respuesta: {rag_response.answer}\n\n"
+        f"Fuentes Consultadas: {'; '.join(formatted_sources)}"
     )
-
-    rows = cursor.fetchall()
-    conn.close()
-
-    if not rows:
-        return f"No se encontraron registros para: {query}"
-
-    results = []
-    for row in rows:
-        name, age, diagnosis, medication, last_visit = row
-        results.append(
-            f"Paciente: {name} ({age} años)\n"
-            f"Diagnóstico: {diagnosis}\n"
-            f"Medicamento: {medication}\n"
-            f"Última visita: {last_visit}"
-        )
-
-    return "\n\n---\n\n".join(results)
+    
+    return formatted_answer

@@ -132,14 +132,14 @@ def ask(
 
     sys.path.append(str(Path(__file__).resolve().parents[2]))
 
-    from src.rag.chunker import load_all_pdfs
+    from src.rag.chunker import load_all_documents
     from src.rag.embedder import load_vectorstore
     from src.rag.retriever import hybrid_search
 
     vectorstore = load_vectorstore()
-    all_chunks = load_all_pdfs()
+    all_docs = load_all_documents()
 
-    chunks = hybrid_search(vectorstore, all_chunks, query)
+    chunks = hybrid_search(vectorstore, all_docs, query)
     prompt = build_prompt(query, chunks)
 
     llm = get_llm()

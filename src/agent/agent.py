@@ -16,7 +16,6 @@ from langchain.agents import create_agent
 from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
-from src.agent.tools import search_clinical_docs, search_patients
 
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 
@@ -30,22 +29,27 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
 OPENAI_MODEL = os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini")
 
 SYSTEM_PROMPT = """
-Eres un asistente médico especializado con acceso a
-documentación clínica y registros de pacientes.
+Eres un asistente médico especializado. Tu única función es
+responder a las preguntas del usuario sobre temas clínicos.
 
-Tienes dos herramientas disponibles:
-- search_clinical_docs: busca en guías clínicas y
-  documentación médica indexada.
-- search_patients: consulta registros de pacientes
-  en el sistema legado.
+Para responder, tienes una única y potente herramienta:
+- answer_clinical_question: Esta herramienta utiliza un sistema
+  de búsqueda avanzado (RAG) que tiene acceso a guías clínicas,
+  protocolos, una base de datos de pacientes y listados de
+  medicamentos.
 
-Reglas:
-1. Responde ÚNICAMENTE con información de tus herramientas.
-2. Si no encuentras información suficiente, indícalo
-   explícitamente con confidence_level 'baja'.
-3. Siempre cita las fuentes documentales usadas.
-4. Sugiere una pregunta de seguimiento relevante.
-5. Nunca inventes información clínica.
+Reglas de oro:
+1. Para CUALQUIER pregunta del usuario, invoca SIEMPRE la
+   herramienta `answer_clinical_question`.
+2. Pasa la pregunta del usuario a la herramienta de la forma
+   más directa y completa posible.
+3. La respuesta de la herramienta ya está formateada para el
+   usuario. Tu trabajo es simplemente devolver esa respuesta
+   directamente.
+4. El `response_format` que se te ha asignado es estricto.
+   La respuesta de la herramienta `answer_clinical_question`
+   contiene la información que necesitas. Debes usar esa
+   información para rellenar los campos de `ClinicalResponse`.
 """
 
 
@@ -77,11 +81,11 @@ def get_llm():
 
 def build_agent(llm, tools: list):
     """
-    Construye el agente dadas sus dependencias (inyeccion de dependencias).
+    Construye un agente genérico dadas sus dependencias (Inyección de Dependencias).
 
-    Args :
-        llm: El modelo de lenguaje a utilizar
-        tools : Lista de herramientas para el agente
+    Args:
+        llm: El modelo de lenguaje a utilizar.
+        tools: Una lista de herramientas para el agente.
 
     Returns:
         Instancia del agente lista para invocar.
@@ -90,7 +94,7 @@ def build_agent(llm, tools: list):
 
     agent = create_agent(
         model=llm,
-        tools=[search_clinical_docs, search_patients],
+        tools=tools, # Corrected: use the 'tools' parameter
         checkpointer=InMemorySaver(),
         system_prompt=SYSTEM_PROMPT,
         response_format=ClinicalResponse,
@@ -100,12 +104,12 @@ def build_agent(llm, tools: list):
     return agent
 
 
-# Instancia global — se crea una sola vez
-clinical_agent = build_agent()
+# --- Creación de la instancia del agente ---
+# 1. Recolectar dependencias
+from src.agent.tools import answer_clinical_question # <- Nueva herramienta
 
-from src.agent.tools import search_clinical_docs, search_patients
+llm = get_llm()
+clinical_tools = [answer_clinical_question] # <- Nueva lista de herramientas
 
-llm = get_llm
-clinical_tools = [search_clinical_docs, search_patients]
-
+# 2. Inyectar dependencias en el constructor
 clinical_agent = build_agent(llm=llm, tools=clinical_tools)

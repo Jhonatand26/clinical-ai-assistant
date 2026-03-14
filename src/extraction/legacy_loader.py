@@ -2,21 +2,28 @@
 legacy_loader.py
 
 Simula la extracción desde un sistema legado clínico
-(base de datos SQLite) y persiste los datos limpios
-en data/processed/.
+(base de datos SQLite) y proporciona una clase cargador
+que implementa BaseLoader.
 """
 
+import sys
 import logging
 import sqlite3
 from pathlib import Path
+from typing import List, Dict
 
-import pandas as pd
+# No necesitamos pandas aquí si solo devolvemos List[Dict]
+# import pandas as pd
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+sys.path.append(str(Path(__file__).resolve().parents[2]))
+from src.extraction.base import BaseLoader # Importar BaseLoader
+
 RAW_DIR = Path("data/raw")
-PROCESSED_DIR = Path("data/processed")
+PROCESSED_DIR = Path("data/processed") # Se mantiene por si hay otras funciones de procesamiento/guardado aquí
+
 DB_PATH = RAW_DIR / "legacy_clinic.db"
 
 
@@ -73,80 +80,46 @@ def create_legacy_database() -> None:
     logger.info(f"Legacy database created at {DB_PATH}")
 
 
-def extract_from_database() -> pd.DataFrame:
+class LegacyLoader(BaseLoader):
     """
-    Extrae todos los registros de pacientes desde
-    la base de datos SQLite legada.
-
-    Returns:
-        DataFrame con los registros extraídos.
-
-    Raises:
-        FileNotFoundError: Si la base de datos no existe.
+    Implementación de BaseLoader para extraer datos de pacientes
+    desde la base de datos SQLite del sistema legado.
     """
-    if not DB_PATH.exists():
-        raise FileNotFoundError(
-            f"Legacy database not found at {DB_PATH}. "
-            "Run create_legacy_database() first."
-        )
+    def __init__(self, db_path: Path = DB_PATH):
+        self.db_path = db_path
+        if not self.db_path.exists():
+            # Asegurarse de que la DB exista antes de intentar cargar
+            create_legacy_database()
+            if not self.db_path.exists(): # Verificar de nuevo por si create_legacy_database falla
+                raise FileNotFoundError(f"La base de datos no se encontró y no pudo ser creada en: {self.db_path}")
 
-    conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql_query("SELECT * FROM patients", conn)
-    conn.close()
+    def load(self) -> List[Dict]:
+        """
+        Se conecta a la base de datos SQLite, extrae los registros de pacientes
+        y los devuelve en el formato estándar (lista de diccionarios).
+        """
+        logger.info(f"Conectando a la base de datos legado en {self.db_path}...")
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row # Para obtener resultados como diccionarios
 
-    logger.info(f"Extracted {len(df)} records from legacy DB")
-    return df
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name, age, diagnosis, medication, last_visit FROM patients")
+        patients = cursor.fetchall()
+        conn.close()
 
-
-def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Limpia el DataFrame: normaliza columnas, elimina
-    duplicados y filas con datos críticos faltantes.
-
-    Args:
-        df: DataFrame crudo desde la base legada.
-
-    Returns:
-        DataFrame limpio.
-    """
-    df.columns = df.columns.str.strip().str.lower()
-    df = df.drop_duplicates(subset=["id"])
-    df = df.dropna(subset=["name", "diagnosis"])
-    return df
-
-
-def save_dataframe(df: pd.DataFrame, filename: str) -> Path:
-    """
-    Persiste el DataFrame limpio como CSV en
-    data/processed/.
-
-    Args:
-        df: DataFrame a guardar.
-        filename: Nombre del archivo CSV.
-
-    Returns:
-        Path del archivo guardado.
-    """
-    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
-    output_path = PROCESSED_DIR / filename
-    df.to_csv(output_path, index=False)
-    logger.info(f"Saved to {output_path}")
-    return output_path
-
-
-def run() -> Path:
-    """
-    Orquesta el pipeline completo de extracción legada.
-
-    Returns:
-        Path del archivo CSV procesado.
-    """
-    create_legacy_database()
-    df = extract_from_database()
-    clean = clean_dataframe(df)
-    return save_dataframe(clean, "legacy_patients.csv")
+        patient_list = [dict(row) for row in patients]
+        logger.info(f"Se extrajeron {len(patient_list)} registros de pacientes desde la DB legado.")
+        return patient_list
 
 
 if __name__ == "__main__":
-    path = run()
-    print(f"Extraction complete: {path}")
+    # Asegurarse de que la base de datos exista para la prueba
+    # create_legacy_database() # Ya se llama en el __init__ del loader si no existe
+    
+    loader = LegacyLoader()
+    data = loader.load()
+    if data:
+        print("\nEjemplo de datos extraídos por LegacyLoader:")
+        print(data[0])
+    else:
+        print("No se extrajeron datos.")

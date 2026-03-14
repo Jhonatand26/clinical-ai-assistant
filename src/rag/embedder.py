@@ -118,8 +118,8 @@ if __name__ == "__main__":
 
     sys.path.append(str(Path(__file__).resolve().parents[2]))
 
-    from src.rag.chunker import load_all_pdfs
+    from src.rag.chunker import load_all_documents
 
-    chunks = load_all_pdfs()
-    vectorstore = build_vectorstore(chunks)
-    print(f"Vectorstore listo con {vectorstore._collection.count()} chunks")
+    docs = load_all_documents()
+    vectorstore = build_vectorstore(docs)
+    print(f"Vectorstore listo con {vectorstore._collection.count()} documentos/chunks")
