@@ -7,7 +7,7 @@ consultas sin conocer los detalles internos del RAG.
 """
 
 import logging
-import os
+from src.config import get_llm
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,10 +18,6 @@ load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2")
-OPENAI_MODEL = os.getenv("OPENAI_CHAT_MODEL", "gpt-5-nano")
 
 
 @dataclass
@@ -36,32 +32,6 @@ class RAGResponse:
 
     answer: str
     sources: list[Document]
-
-
-def get_llm():
-    """
-    Retorna el LLM configurado según LLM_PROVIDER.
-
-    Returns:
-        Instancia del LLM listo para usar.
-
-    Raises:
-        ValueError: Si el proveedor no es soportado.
-    """
-    if LLM_PROVIDER == "openai":
-        from langchain_openai import ChatOpenAI
-
-        logger.info(f"Using OpenAI LLM: {OPENAI_MODEL}")
-        return ChatOpenAI(model=OPENAI_MODEL, temperature=0)
-
-    elif LLM_PROVIDER == "ollama":
-        from langchain_ollama import ChatOllama
-
-        logger.info(f"Using Ollama LLM: {OLLAMA_MODEL}")
-        return ChatOllama(model=OLLAMA_MODEL, temperature=0)
-
-    else:
-        raise ValueError(f"Unsupported LLM_PROVIDER: {LLM_PROVIDER}")
 
 
 def build_prompt(
