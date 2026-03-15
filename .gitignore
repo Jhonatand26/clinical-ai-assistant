@@ -208,3 +208,6 @@ __marimo__/
 
 data/chroma/
 mlruns/
+
+# Claude Code local workspace
+.claude/
