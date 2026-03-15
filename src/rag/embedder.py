@@ -72,6 +72,14 @@ def build_vectorstore(
     CHROMA_PERSIST_DIR.mkdir(parents=True, exist_ok=True)
     embedding_fn = get_embedding_function()
 
+    # Borrar colección existente antes de reconstruir para evitar duplicados
+    try:
+        client = chromadb.PersistentClient(path=str(CHROMA_PERSIST_DIR))
+        client.delete_collection(COLLECTION_NAME)
+        logger.info(f"Existing collection '{COLLECTION_NAME}' deleted before rebuild.")
+    except Exception:
+        pass  # La colección no existía, no hay nada que borrar
+
     logger.info(f"Building vectorstore with {len(chunks)} chunks...")
 
     vectorstore = Chroma.from_documents(

@@ -122,14 +122,14 @@ Esto permite agregar nuevas fuentes (FHIR API, base de datos relacional, RSS fee
 
 ### 4. Caché a nivel de módulo para documentos y vectorstore
 
-El pipeline carga ~1.400 chunks en cada consulta incluyendo 3 PDFs, una base de datos SQLite y una petición HTTP a Wikipedia. En producción esto es inaceptable. La solución implementada usa variables de módulo con inicialización lazy:
+El pipeline carga ~2.800 chunks en cada consulta incluyendo 3 PDFs, una base de datos SQLite y una petición HTTP a Wikipedia. En producción esto es inaceptable. La solución implementada usa variables de módulo con inicialización lazy:
 
 ```python
 _vectorstore_cache: Chroma | None = None
 _documents_cache: list[Document] | None = None
 ```
 
-La primera consulta paga el costo de carga (~5 segundos). Las siguientes van directamente a embeddings + búsqueda. El vectorstore no se recarga aunque el proceso siga corriendo.
+La primera consulta paga el costo de carga (~10–15 segundos). Las siguientes van directamente a embeddings + búsqueda. El vectorstore no se recarga aunque el proceso siga corriendo.
 
 ### 5. Soporte dual de LLM: Ollama (local) y OpenAI (nube)
 
@@ -141,7 +141,7 @@ Esto permite:
 
 ### 6. ChromaDB con persistencia en disco
 
-ChromaDB persiste el índice vectorial en `data/chroma/` como SQLite. No requiere servidor externo, no tiene costo, funciona offline. Para un PoC con ~1.400 documentos, el rendimiento es más que suficiente.
+ChromaDB persiste el índice vectorial en `data/chroma/` como SQLite. No requiere servidor externo, no tiene costo, funciona offline. Para un PoC con ~2.800 documentos, el rendimiento es más que suficiente.
 
 **Nota importante sobre reconstrucción del vectorstore**: `Chroma.from_documents()` hace *append* a una colección existente, no la reemplaza. El script `src/rag/embedder.py` elimina la colección antes de reconstruir para evitar duplicados.
 
@@ -177,7 +177,7 @@ La salida estructurada (JSON schema enforcement) funciona de forma nativa con Op
 
 **BM25 en memoria, reconstruido en cada arranque**
 
-El índice BM25 se reconstruye desde los documentos en memoria cada vez que se inicia el servidor (~2 segundos para 1.400 docs). No está persistido en disco.
+El índice BM25 se reconstruye desde los documentos en memoria cada vez que se inicia el servidor (~2 segundos para 2.800 docs). No está persistido en disco.
 
 **Web scraping en arranque**
 
@@ -281,7 +281,6 @@ clinical-ai-assistant/
 ├── tests/
 │   ├── test_extraction.py
 │   └── test_rag.py
-├── main.py                         # Punto de entrada — construye el vectorstore
 ├── pyproject.toml                  # Dependencias y metadata del proyecto (UV)
 ├── .env.example                    # Plantilla de variables de entorno
 └── makefile                        # Comandos de desarrollo
@@ -352,15 +351,16 @@ OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 Este paso procesa los PDFs, la base de datos legado y el scraping web, genera los embeddings y persiste el índice ChromaDB en `data/chroma/`. Solo es necesario ejecutarlo una vez (o cuando se agreguen nuevos documentos).
 
 ```bash
-uv run python main.py
+uv run python src/rag/embedder.py
 ```
 
 El log indicará el número de chunks procesados por fuente:
 ```
 INFO:src.rag.chunker:Found 3 PDFs to process.
-INFO:src.rag.chunker:Total documents/chunks from all sources: 1395
-INFO:src.rag.embedder:Building vectorstore with 1395 chunks...
+INFO:src.rag.chunker:Total documents/chunks from all sources: 2790
+INFO:src.rag.embedder:Building vectorstore with 2790 chunks...
 INFO:src.rag.embedder:Vectorstore persisted at data\chroma
+Vectorstore listo con 2790 documentos/chunks
 ```
 
 ### 5. Iniciar la aplicación
@@ -402,7 +402,7 @@ uv run pytest
 
 ### El agente tarda mucho en la primera pregunta
 
-La primera consulta carga ~1.400 chunks desde todas las fuentes (PDFs, SQLite, Wikipedia) y los cachea en memoria. Las consultas siguientes son significativamente más rápidas. Este comportamiento es visible en los logs con el mensaje `"Loading all documents (first time)..."`.
+La primera consulta carga ~2.800 chunks desde todas las fuentes (PDFs, SQLite, Wikipedia) y los cachea en memoria. Las consultas siguientes son significativamente más rápidas. Este comportamiento es visible en los logs con el mensaje `"Loading all documents (first time)..."`.
 
 ---
 
@@ -412,7 +412,7 @@ El vectorstore ChromaDB puede estar desactualizado. Reconstruirlo desde cero:
 
 ```bash
 rm -rf data/chroma
-uv run python main.py
+uv run python src/rag/embedder.py
 ```
 
 Reiniciar la aplicación después de reconstruir.
