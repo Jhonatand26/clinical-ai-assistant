@@ -16,7 +16,7 @@ skinparam package {
 }
 
 ' =============================================
-' EXTRACTION LAYER
+' EXTRACTION LAYER  (solo usada en build time)
 ' =============================================
 package "src.extraction" #EDE7F6 {
 
@@ -74,6 +74,10 @@ package "src.rag" #E3F2FD {
         + build_prompt(query, chunks, history) : str
         - _get_vectorstore() : Chroma
         - _get_all_documents() : List[Document]
+        .. nota ..
+        _get_all_documents() extrae el corpus BM25
+        directamente del vectorstore persisitido.
+        No recarga desde SQLite ni web en runtime.
     }
 
     class Retriever <<module>> {
@@ -97,13 +101,16 @@ package "src.rag" #E3F2FD {
     }
 }
 
-Pipeline --> Retriever  : usa para búsqueda
-Pipeline --> Embedder   : carga vectorstore
-Pipeline ..> RAGResponse : <<creates>>
-Pipeline --> Config      : get_llm()
+' --- Relaciones en tiempo de consulta (runtime) ---
+Pipeline  -->  Retriever : usa para búsqueda
+Pipeline  -->  Embedder  : carga vectorstore
+Pipeline  ..>  RAGResponse : <<creates>>
+Pipeline  -->  Config    : get_llm()
 
-Chunker --> LegacyLoader : instancia
-Chunker --> WebScraper   : instancia
+' --- Relaciones en tiempo de build (solo make ResetChromaDB) ---
+Embedder  -->  Chunker   : <<build time>>\nload_all_documents()
+Chunker   -->  LegacyLoader : instancia
+Chunker   -->  WebScraper   : instancia
 
 ' =============================================
 ' AGENT LAYER
@@ -128,10 +135,10 @@ package "src.agent" #E8F5E9 {
     }
 }
 
-Agent --> Config       : get_llm()
-Agent --> Tools        : registra herramienta
-Agent ..> ClinicalResponse : response_format
-Tools --> Pipeline     : ask(query)
+Agent  -->  Config          : get_llm()
+Agent  -->  Tools           : registra herramienta
+Agent  ..>  ClinicalResponse : response_format
+Tools  -->  Pipeline        : ask(query)
 
 ' =============================================
 ' UI LAYER
@@ -143,7 +150,7 @@ package "src.ui" #FBE9E7 {
     }
 }
 
-App --> Agent          : clinical_agent.invoke()
-App ..> ClinicalResponse : renderiza
+App  -->  Agent           : clinical_agent.invoke()
+App  ..>  ClinicalResponse : renderiza
 
 @enduml

@@ -80,6 +80,18 @@ Fuentes de datos (ingesta):
 | `src/config.py` | Configuración centralizada del LLM |
 | `src/ui/app.py` | Interfaz Streamlit con renderizado estructurado |
 
+### Diagramas UML
+
+**Diagrama de clases** — capas, módulos y relaciones entre componentes:
+
+![Diagrama de clases](docs/diagrams/class_diagram.svg)
+
+**Diagrama de secuencia** — flujo completo de una consulta de extremo a extremo:
+
+![Diagrama de secuencia](docs/diagrams/sequence_diagram.svg)
+
+> Los fuentes PlantUML están en `docs/diagrams/` para regenerar los diagramas si se modifica la arquitectura.
+
 ---
 
 ## Decisiones Técnicas

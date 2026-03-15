@@ -43,12 +43,26 @@ def _get_vectorstore() -> Chroma:
 
 
 def _get_all_documents() -> list[Document]:
-    """Retorna los documentos cacheados, cargándolos si es la primera vez."""
+    """
+    Retorna el corpus de documentos para BM25, extrayéndolo
+    directamente del vectorstore (fuente única de verdad).
+
+    Al obtener los documentos del vectorstore persisitido en disco
+    se garantiza que el corpus BM25 esté siempre sincronizado
+    con lo que ChromaDB puede recuperar semánticamente, sin
+    depender de recargas desde SQLite o peticiones HTTP en tiempo
+    de consulta.
+    """
     global _documents_cache
     if _documents_cache is None:
-        from src.rag.chunker import load_all_documents
-        logger.info("Loading all documents (first time)...")
-        _documents_cache = load_all_documents()
+        logger.info("Extracting BM25 corpus from vectorstore (first time)...")
+        vs = _get_vectorstore()
+        raw = vs._collection.get(include=["documents", "metadatas"])
+        _documents_cache = [
+            Document(page_content=content, metadata=meta or {})
+            for content, meta in zip(raw["documents"], raw["metadatas"])
+        ]
+        logger.info(f"BM25 corpus ready: {len(_documents_cache)} documents from vectorstore")
     return _documents_cache
 
 

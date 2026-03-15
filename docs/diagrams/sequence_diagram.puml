@@ -20,9 +20,15 @@ participant  "agent.py\nLangGraph ReAct"              as Agent  #E8F5E9
 participant  "tools.py\nanswer_clinical_question"     as Tool   #E8F5E9
 participant  "pipeline.py\nRAG Pipeline"              as RAG    #E3F2FD
 participant  "retriever.py\nHybrid Search"            as RET    #E3F2FD
-participant  "chunker.py\nDocuments"                  as CHK    #E3F2FD
 participant  "embedder.py\nChromaDB"                  as EMB    #E3F2FD
 participant  "config.py\nLLM"                         as LLM    #FFF9C4
+
+note over EMB
+  <b>Build time (make ResetChromaDB)</b>
+  chunker.py → LegacyLoader + WebScraper + PDFs
+  → build_vectorstore() → persiste en data/chroma/
+  <i>No ocurre durante las consultas normales.</i>
+end note
 
 == Interacción del usuario ==
 
@@ -35,25 +41,28 @@ LLM  -->  Agent : tool_call: answer_clinical_question(query)
 Agent ->  Tool  : execute(query)
 Tool  ->  RAG   : ask(query)
 
-== Inicialización lazy (solo en la primera consulta) ==
+== Inicialización lazy (solo en la primera consulta del proceso) ==
 
-group Primera consulta [caché vacío — _vectorstore_cache is None]
-    RAG  ->  EMB  : _get_vectorstore()
+group Primera consulta [caché vacío]
+    RAG  ->  EMB  : _get_vectorstore()\n→ load_vectorstore()
     note right of EMB
-      load_vectorstore()
+      Carga ChromaDB desde disco
       ← data/chroma/
     end note
     EMB  -->  RAG  : Chroma (guardado en _vectorstore_cache)
 
-    RAG  ->  CHK  : _get_all_documents()
-    CHK  ->  CHK  : load_pdf() × 3 PDFs
-    CHK  ->  CHK  : LegacyLoader().load()\n← legacy_clinic.db
-    CHK  ->  CHK  : WebScraper().load()\n← Wikipedia OMS
-    CHK  -->  RAG  : ~2800 Documents (guardados en _documents_cache)
+    RAG  ->  EMB  : _get_all_documents()\n→ vs._collection.get()
+    note right of EMB
+      Extrae todos los documentos
+      del vectorstore ya cargado.
+      Fuente única de verdad —
+      sin HTTP ni SQLite en runtime.
+    end note
+    EMB  -->  RAG  : ~2800 Documents (guardados en _documents_cache)
 end
 
 group Consultas siguientes [caché poblado]
-    RAG  ->  RAG  : retorna _vectorstore_cache\ny _documents_cache
+    RAG  ->  RAG  : retorna _vectorstore_cache\ny _documents_cache directamente
 end
 
 == Recuperación híbrida ==
