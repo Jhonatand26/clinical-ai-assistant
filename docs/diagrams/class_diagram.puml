@@ -1,0 +1,149 @@
+@startuml class_diagram
+skinparam classAttributeIconSize 0
+skinparam classFontSize 12
+skinparam packageFontSize 13
+skinparam backgroundColor #FAFAFA
+skinparam shadowing false
+skinparam class {
+    BackgroundColor White
+    BorderColor #555
+    ArrowColor #333
+    HeaderBackgroundColor #E8EAF6
+}
+skinparam package {
+    BorderColor #888
+    BackgroundColor #F5F5F5
+}
+
+' =============================================
+' EXTRACTION LAYER
+' =============================================
+package "src.extraction" #EDE7F6 {
+
+    abstract class BaseLoader <<abstract>> {
+        + {abstract} load() : List[Dict]
+    }
+
+    class LegacyLoader {
+        - db_path : Path
+        + __init__(db_path: Path)
+        + load() : List[Dict]
+        - create_legacy_database() : None
+    }
+
+    class WebScraper {
+        - url : str
+        - headers : dict
+        + __init__(url: str)
+        + load() : List[Dict]
+        - _fetch_html() : BeautifulSoup
+        - _extract_tables(soup) : List[DataFrame]
+        - _clean_dataframe(df) : DataFrame
+    }
+}
+
+BaseLoader <|-- LegacyLoader : implements
+BaseLoader <|-- WebScraper   : implements
+
+' =============================================
+' CONFIG (capa transversal)
+' =============================================
+package "src" #FFF9C4 {
+    class Config <<module>> {
+        + LLM_PROVIDER : str
+        + OLLAMA_MODEL : str
+        + OPENAI_MODEL : str
+        + get_llm() : BaseChatModel
+    }
+}
+
+' =============================================
+' RAG LAYER
+' =============================================
+package "src.rag" #E3F2FD {
+
+    class RAGResponse <<dataclass>> {
+        + answer : str
+        + sources : List[Document]
+    }
+
+    class Pipeline <<module>> {
+        - _vectorstore_cache : Chroma | None
+        - _documents_cache : List[Document] | None
+        + ask(query, chat_history) : RAGResponse
+        + build_prompt(query, chunks, history) : str
+        - _get_vectorstore() : Chroma
+        - _get_all_documents() : List[Document]
+    }
+
+    class Retriever <<module>> {
+        + hybrid_search(vs, docs, query, k) : List[Document]
+        + get_semantic_results(vs, query, k) : List[Document]
+        + get_bm25_results(chunks, query, k) : List[Document]
+        + reciprocal_rank_fusion(sem, bm25, k) : List[Document]
+    }
+
+    class Chunker <<module>> {
+        + load_all_documents() : List[Document]
+        + load_pdf(path) : List[Document]
+        + split_documents(docs) : List[Document]
+        - _dicts_to_documents(data, source) : List[Document]
+    }
+
+    class Embedder <<module>> {
+        + build_vectorstore(chunks) : Chroma
+        + load_vectorstore() : Chroma
+        + get_embedding_function() : Embeddings
+    }
+}
+
+Pipeline --> Retriever  : usa para búsqueda
+Pipeline --> Embedder   : carga vectorstore
+Pipeline ..> RAGResponse : <<creates>>
+Pipeline --> Config      : get_llm()
+
+Chunker --> LegacyLoader : instancia
+Chunker --> WebScraper   : instancia
+
+' =============================================
+' AGENT LAYER
+' =============================================
+package "src.agent" #E8F5E9 {
+
+    class ClinicalResponse <<Pydantic>> {
+        + answer : str
+        + confidence_level : str
+        + sources : List[str]
+        + suggested_followup : str
+    }
+
+    class Agent <<module>> {
+        + SYSTEM_PROMPT : str
+        + build_agent(llm, tools) : CompiledGraph
+        ~ clinical_agent : CompiledGraph
+    }
+
+    class Tools <<module>> {
+        + answer_clinical_question(query: str) : str
+    }
+}
+
+Agent --> Config       : get_llm()
+Agent --> Tools        : registra herramienta
+Agent ..> ClinicalResponse : response_format
+Tools --> Pipeline     : ask(query)
+
+' =============================================
+' UI LAYER
+' =============================================
+package "src.ui" #FBE9E7 {
+    class App <<Streamlit>> {
+        + render_structured_response(response) : None
+        + parse_response(content) : ClinicalResponse | str
+    }
+}
+
+App --> Agent          : clinical_agent.invoke()
+App ..> ClinicalResponse : renderiza
+
+@enduml

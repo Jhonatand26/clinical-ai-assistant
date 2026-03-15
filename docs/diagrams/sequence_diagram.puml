@@ -1,0 +1,105 @@
+@startuml sequence_diagram
+skinparam sequenceArrowThickness 2
+skinparam responseMessageBelowArrow true
+skinparam maxMessageSize 140
+skinparam backgroundColor #FAFAFA
+skinparam shadowing false
+skinparam sequence {
+    ParticipantBackgroundColor White
+    ParticipantBorderColor #555
+    ArrowColor #333
+    LifeLineBorderColor #999
+    GroupBorderColor #888
+    GroupBackgroundColor #F5F5F5
+    GroupHeaderFontColor #333
+}
+
+actor        "Usuario"          as User
+participant  "app.py\nStreamlit UI"                   as UI    #FBE9E7
+participant  "agent.py\nLangGraph ReAct"              as Agent  #E8F5E9
+participant  "tools.py\nanswer_clinical_question"     as Tool   #E8F5E9
+participant  "pipeline.py\nRAG Pipeline"              as RAG    #E3F2FD
+participant  "retriever.py\nHybrid Search"            as RET    #E3F2FD
+participant  "chunker.py\nDocuments"                  as CHK    #E3F2FD
+participant  "embedder.py\nChromaDB"                  as EMB    #E3F2FD
+participant  "config.py\nLLM"                         as LLM    #FFF9C4
+
+== Interacción del usuario ==
+
+User  ->  UI    : escribe pregunta clínica
+UI    ->  Agent : invoke(HumanMessage, config={thread_id})
+Agent ->  LLM   : razona — decide invocar tool
+
+LLM  -->  Agent : tool_call: answer_clinical_question(query)
+
+Agent ->  Tool  : execute(query)
+Tool  ->  RAG   : ask(query)
+
+== Inicialización lazy (solo en la primera consulta) ==
+
+group Primera consulta [caché vacío — _vectorstore_cache is None]
+    RAG  ->  EMB  : _get_vectorstore()
+    note right of EMB
+      load_vectorstore()
+      ← data/chroma/
+    end note
+    EMB  -->  RAG  : Chroma (guardado en _vectorstore_cache)
+
+    RAG  ->  CHK  : _get_all_documents()
+    CHK  ->  CHK  : load_pdf() × 3 PDFs
+    CHK  ->  CHK  : LegacyLoader().load()\n← legacy_clinic.db
+    CHK  ->  CHK  : WebScraper().load()\n← Wikipedia OMS
+    CHK  -->  RAG  : ~2800 Documents (guardados en _documents_cache)
+end
+
+group Consultas siguientes [caché poblado]
+    RAG  ->  RAG  : retorna _vectorstore_cache\ny _documents_cache
+end
+
+== Recuperación híbrida ==
+
+RAG  ->  RET  : hybrid_search(vectorstore, all_docs, query, k=5)
+
+RET  ->  EMB  : similarity_search(query, k=5)
+EMB  -->  RET  : 5 chunks semánticos (cosine similarity)
+
+RET  ->  RET  : BM25Okapi(corpus).get_scores(query)\n→ top-5 chunks léxicos
+
+RET  ->  RET  : reciprocal_rank_fusion(semantic, bm25, k=60)\n→ score = Σ 1/(60 + rank)
+
+RET  -->  RAG  : top-5 chunks fusionados
+
+== Generación de respuesta ==
+
+RAG  ->  RAG  : build_prompt(query, chunks, chat_history)
+note right of RAG
+  Prompt incluye:
+  • historial (últimos 4 turnos)
+  • chunks con [Fuente, Página]
+  • instrucción de no alucinar
+end note
+
+RAG  ->  LLM  : invoke(prompt)
+LLM  -->  RAG  : AIMessage(answer)
+RAG  -->  Tool : RAGResponse(answer, sources)
+
+== Formateo y estructura ==
+
+Tool ->  Tool  : deduplica y formatea sources
+Tool -->  Agent : "Respuesta: ...\nFuentes Consultadas: ..."
+
+Agent ->  LLM  : estructura respuesta como ClinicalResponse
+LLM  -->  Agent : ClinicalResponse {\n  answer, confidence_level,\n  sources, suggested_followup\n}
+
+== Renderizado en UI ==
+
+Agent -->  UI   : AIMessage(content=ClinicalResponse)
+UI   ->   UI   : parse_response(content)
+note right of UI
+  Intenta deserializar JSON.
+  Fallback a texto plano
+  si el modelo no respetó el schema.
+end note
+UI   -->  User  : respuesta estructurada\n🟢 Confianza · 📚 Fuentes · 💡 Sugerencia
+
+@enduml
