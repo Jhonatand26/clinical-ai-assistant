@@ -4,20 +4,52 @@ pipeline.py
 Orquesta el pipeline RAG completo. Expone una interfaz
 única para que componentes externos puedan hacer
 consultas sin conocer los detalles internos del RAG.
+
+El vectorstore y el corpus de documentos se cargan una
+sola vez por proceso (caché a nivel de módulo) para
+evitar recargas costosas en cada consulta.
 """
 
 import logging
-from src.config import get_llm
 from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import load_dotenv
+from langchain_chroma import Chroma
 from langchain_core.documents import Document
+
+from src.config import get_llm
 
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# --- Caché a nivel de módulo ---
+# Se inicializan en la primera consulta y se reutilizan
+# en todas las siguientes sin recargar desde disco/red.
+_vectorstore_cache: Chroma | None = None
+_documents_cache: list[Document] | None = None
+
+
+def _get_vectorstore() -> Chroma:
+    """Retorna el vectorstore cacheado, cargándolo si es la primera vez."""
+    global _vectorstore_cache
+    if _vectorstore_cache is None:
+        from src.rag.embedder import load_vectorstore
+        logger.info("Loading vectorstore (first time)...")
+        _vectorstore_cache = load_vectorstore()
+    return _vectorstore_cache
+
+
+def _get_all_documents() -> list[Document]:
+    """Retorna los documentos cacheados, cargándolos si es la primera vez."""
+    global _documents_cache
+    if _documents_cache is None:
+        from src.rag.chunker import load_all_documents
+        logger.info("Loading all documents (first time)...")
+        _documents_cache = load_all_documents()
+    return _documents_cache
 
 
 @dataclass
@@ -89,28 +121,23 @@ def ask(
     """
     Ejecuta el pipeline RAG completo para una consulta.
 
-    Carga el vectorstore, ejecuta búsqueda híbrida,
-    construye el prompt y genera la respuesta.
+    Usa caché de módulo para vectorstore y documentos:
+    solo se cargan en la primera llamada del proceso.
 
     Args:
         query: Pregunta del usuario en lenguaje natural.
+        chat_history: Historial opcional de conversación.
 
     Returns:
         RAGResponse con la respuesta y las fuentes usadas.
     """
-    import sys
-
-    sys.path.append(str(Path(__file__).resolve().parents[2]))
-
-    from src.rag.chunker import load_all_documents
-    from src.rag.embedder import load_vectorstore
     from src.rag.retriever import hybrid_search
 
-    vectorstore = load_vectorstore()
-    all_docs = load_all_documents()
+    vectorstore = _get_vectorstore()
+    all_docs = _get_all_documents()
 
     chunks = hybrid_search(vectorstore, all_docs, query)
-    prompt = build_prompt(query, chunks)
+    prompt = build_prompt(query, chunks, chat_history)
 
     llm = get_llm()
     response = llm.invoke(prompt)
